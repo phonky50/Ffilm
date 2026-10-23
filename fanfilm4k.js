@@ -1,6 +1,8 @@
 /**
  * Plugin Name: FanFilm 4K
  * Description: Онлайн-просмотр 4K UHD фильмов и сериалов с зеркал FanFilm4K для Lampa
+ * Author: Qusa
+ * Version: 1.0.5
  */
 (function () {
     'use strict';
@@ -253,7 +255,10 @@
             }, function (html) {
                 var fileListMatch = html.match(/const fileList = JSON\.parse$'(.*?)'$;/);
                 if (!fileListMatch) {
-                    onResult({ error: 'Структура плейлиста не найдена в плеере' });
+                    onResult({
+                        iframeUrl: iframeUrl,
+                        directOnly: true
+                    });
                     return;
                 }
                 try {
@@ -264,10 +269,18 @@
                         referer: referer
                     });
                 } catch (e) {
-                    onResult({ error: 'Ошибка разбора плейлиста плеера' });
+                    onResult({
+                        iframeUrl: iframeUrl,
+                        directOnly: true
+                    });
                 }
-            }, function (err) {
-                onResult({ error: 'Ошибка доступа к плееру: ' + err.message });
+            }, function () {
+                // Если AJAX-запрос к плееру выдал 404, не прерываем работу — сразу открываем плеер напрямую!
+                console.log('[FanFilm4K] Iframe XHR failed, launching player directly');
+                onResult({
+                    iframeUrl: iframeUrl,
+                    directOnly: true
+                });
             });
         }
     };
@@ -286,6 +299,11 @@
                     if (typeof Lampa !== 'undefined' && Lampa.Noty) {
                         Lampa.Noty.show('FanFilm4K: ' + res.error);
                     }
+                    return;
+                }
+                // Прямой запуск плеера во фрейме
+                if (res.directOnly || !res.fileList) {
+                    FanFilmUI.launchPlayer(card, res.iframeUrl);
                     return;
                 }
                 var fileList = res.fileList;
@@ -461,7 +479,7 @@
                 '    <div style="font-size:1.2em;font-weight:bold;">' + title + '</div>',
                 '    <div class="fanfilm4k-player-close selector" style="background:#e50914;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:bold;">✕ Закрыть</div>',
                 '  </div>',
-                '  <iframe src="' + playerUrl + '" style="width:100%;height:100%;border:none;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true"></iframe>',
+                '  <iframe src="' + playerUrl + '" style="width:100%;height:100%;border:none;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" allow="autoplay; fullscreen"></iframe>',
                 '</div>'
             ].join(''));
             $('body').append(overlay);
