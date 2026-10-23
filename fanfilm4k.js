@@ -1,13 +1,21 @@
 /**
  * Plugin Name: FanFilm 4K
  * Description: Онлайн-просмотр 4K UHD фильмов и сериалов с зеркал FanFilm4K для Lampa
- * Author: Qusa
- * Version: 1.0.5
  */
 (function () {
     'use strict';
     if (window.plugin_fanfilm4k_ready) return;
     window.plugin_fanfilm4k_ready = true;
+    // Гарантируем отправку Referer с http://lampa.mx на https:// плеера
+    try {
+        var metaRef = document.querySelector('meta[name="referrer"]');
+        if (!metaRef) {
+            metaRef = document.createElement('meta');
+            metaRef.name = 'referrer';
+            document.head.appendChild(metaRef);
+        }
+        metaRef.content = 'unsafe-url';
+    } catch (e) {}
     // Прямое рабочее зеркало по умолчанию
     var DEFAULT_MIRROR = 'https://v17.fanfilm4k.media';
     var ZERKALO_PORTAL = 'https://fanfilmzerkalo.fun/';
@@ -275,7 +283,6 @@
                     });
                 }
             }, function () {
-                // Если AJAX-запрос к плееру выдал 404, не прерываем работу — сразу открываем плеер напрямую!
                 console.log('[FanFilm4K] Iframe XHR failed, launching player directly');
                 onResult({
                     iframeUrl: iframeUrl,
@@ -301,7 +308,6 @@
                     }
                     return;
                 }
-                // Прямой запуск плеера во фрейме
                 if (res.directOnly || !res.fileList) {
                     FanFilmUI.launchPlayer(card, res.iframeUrl);
                     return;
@@ -479,7 +485,7 @@
                 '    <div style="font-size:1.2em;font-weight:bold;">' + title + '</div>',
                 '    <div class="fanfilm4k-player-close selector" style="background:#e50914;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:bold;">✕ Закрыть</div>',
                 '  </div>',
-                '  <iframe src="' + playerUrl + '" style="width:100%;height:100%;border:none;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" allow="autoplay; fullscreen"></iframe>',
+                '  <iframe src="' + playerUrl + '" referrerpolicy="unsafe-url" style="width:100%;height:100%;border:none;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" allow="autoplay; fullscreen"></iframe>',
                 '</div>'
             ].join(''));
             $('body').append(overlay);
