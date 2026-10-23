@@ -464,13 +464,6 @@
             });
         },
         launchPlayer: function (card, iframeUrl, fileInfo, episodeContext) {
-            var title = (card.title || card.name || 'FanFilm 4K');
-            if (episodeContext) {
-                title += ' (S' + episodeContext.season + 'E' + episodeContext.episode + ')';
-            }
-            if (fileInfo && fileInfo.translation) {
-                title += ' [' + fileInfo.translation + ']';
-            }
             var playerUrl = iframeUrl;
             if (fileInfo && fileInfo.id_translation) {
                 playerUrl += (playerUrl.indexOf('?') >= 0 ? '&' : '?') + 'translation=' + encodeURIComponent(fileInfo.id_translation);
@@ -480,12 +473,9 @@
                 if (episodeContext.episode) playerUrl += '&episode=' + encodeURIComponent(episodeContext.episode);
             }
             var overlay = $([
-                '<div class="fanfilm4k-player-container" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:999999;">',
-                '  <div class="fanfilm4k-player-bar" style="position:absolute;top:0;left:0;width:100%;padding:15px 25px;background:linear-gradient(to bottom, rgba(0,0,0,0.85), transparent);z-index:100;display:flex;align-items:center;justify-content:space-between;color:#fff;font-family:sans-serif;">',
-                '    <div style="font-size:1.2em;font-weight:bold;">' + title + '</div>',
-                '    <div class="fanfilm4k-player-close selector" style="background:#e50914;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:bold;">✕ Закрыть</div>',
-                '  </div>',
-                '  <iframe src="' + playerUrl + '" referrerpolicy="unsafe-url" style="width:100%;height:100%;border:none;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" allow="autoplay; fullscreen"></iframe>',
+                '<div class="fanfilm4k-player-container" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:99999999 !important;">',
+                '  <div class="fanfilm4k-player-close selector" title="Закрыть" style="position:absolute;top:12px;right:16px;z-index:100000;background:rgba(229,9,20,0.85);color:#fff;width:38px;height:38px;line-height:38px;text-align:center;border-radius:50%;cursor:pointer;font-size:18px;font-weight:bold;box-shadow:0 2px 10px rgba(0,0,0,0.7);transition:transform 0.2s;">✕</div>',
+                '  <iframe src="' + playerUrl + '" referrerpolicy="unsafe-url" style="width:100%;height:100%;border:none;display:block;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" allow="autoplay; fullscreen"></iframe>',
                 '</div>'
             ].join(''));
             $('body').append(overlay);
@@ -520,6 +510,7 @@
                     ? e.object.activity.render() 
                     : (e.render || $(e.body) || $('.full-start-new, .full-start, .full'));
                 if (!render || !render.length) return;
+                // 1. Для правого меню источников Lampa:
                 var btnsContainer = render.find('.buttons--container');
                 if (btnsContainer.length && !btnsContainer.find('.view--fanfilm').length) {
                     var sourceBtn = $([
@@ -535,6 +526,7 @@
                     });
                     btnsContainer.append(sourceBtn);
                 }
+                // 2. Для стандартного блока кнопок под постером
                 if (render.find('.view--fanfilm').length) return;
                 var btn = $([
                     '<div class="full-start__button selector view--fanfilm" data-subtitle="Онлайн в 4K UHD" style="background: linear-gradient(135deg, #165b32 0%, #168e5f 100%); margin-bottom: 8px;">',
