@@ -1,8 +1,6 @@
 /**
  * Plugin Name: FanFilm 4K
  * Description: Онлайн-просмотр 4K UHD фильмов и сериалов с зеркал FanFilm4K для Lampa
- * Author: Qusa
- * Version: 1.0.2
  */
 
 (function () {
