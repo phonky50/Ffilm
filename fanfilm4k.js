@@ -1,12 +1,15 @@
 /**
  * Plugin Name: FanFilm 4K
  * Description: Онлайн-просмотр 4K UHD фильмов и сериалов с зеркал FanFilm4K для Lampa
- * Version: 1.0.7
+ * Version: 1.0.8
  */
+
 (function () {
     'use strict';
+
     if (window.plugin_fanfilm4k_ready) return;
     window.plugin_fanfilm4k_ready = true;
+
     // Гарантируем отправку Referer с http://lampa.mx на https:// плеера
     try {
         var metaRef = document.querySelector('meta[name="referrer"]');
@@ -17,12 +20,18 @@
         }
         metaRef.content = 'unsafe-url';
     } catch (e) {}
+
     // Прямое рабочее зеркало по умолчанию
     var DEFAULT_MIRROR = 'https://v17.fanfilm4k.media';
     var ZERKALO_PORTAL = 'https://fanfilmzerkalo.fun/';
+
+    // CORS-прокси по умолчанию для Smart TV (Media Station X)
+    var DEFAULT_CORS_PROXY = 'https://lampasams.phonkartur.workers.dev/';
+
     var STORAGE_MIRROR_KEY = 'fanfilm4k_active_mirror';
     var STORAGE_CUSTOM_KEY = 'fanfilm4k_custom_mirror';
     var STORAGE_PROXY_URL_KEY = 'fanfilm4k_cors_proxy';
+
     function getStorage(key, def) {
         if (typeof Lampa !== 'undefined' && Lampa.Storage) {
             return Lampa.Storage.get(key, def);
@@ -34,6 +43,7 @@
             return def;
         }
     }
+
     function setStorage(key, val) {
         if (typeof Lampa !== 'undefined' && Lampa.Storage) {
             Lampa.Storage.set(key, val);
@@ -43,17 +53,20 @@
             localStorage.setItem(key, JSON.stringify(val));
         } catch (e) {}
     }
+
     function request(url, options, onSuccess, onError) {
         options = options || {};
         var method = options.method || 'GET';
         var data = options.data || null;
         var headers = options.headers || {};
         var timeout = options.timeout || 12000;
-        var customProxy = (getStorage(STORAGE_PROXY_URL_KEY, '') || '').trim();
+
+        var customProxy = (getStorage(STORAGE_PROXY_URL_KEY, '') || DEFAULT_CORS_PROXY || '').trim();
         var finalUrl = url;
         if (customProxy) {
             finalUrl = customProxy.replace(/\/+$/, '') + '/' + url;
         }
+
         if (typeof Lampa !== 'undefined' && Lampa.Reguest) {
             var network = new Lampa.Reguest();
             network.silent(finalUrl, function (response) {
@@ -73,14 +86,17 @@
             });
             return;
         }
+
         var xhr = new XMLHttpRequest();
         xhr.open(method, finalUrl, true);
         xhr.timeout = timeout;
+
         for (var h in headers) {
             if (Object.prototype.hasOwnProperty.call(headers, h)) {
                 xhr.setRequestHeader(h, headers[h]);
             }
         }
+
         xhr.onload = function () {
             if (xhr.status >= 200 && xhr.status < 400) {
                 onSuccess(xhr.responseText);
@@ -88,12 +104,15 @@
                 if (onError) onError(new Error('HTTP status ' + xhr.status));
             }
         };
+
         xhr.onerror = function () {
             if (onError) onError(new Error('CORS / Сетевая ошибка (status 0)'));
         };
+
         xhr.ontimeout = function () {
             if (onError) onError(new Error('Превышен таймаут ответа'));
         };
+
         if (data && typeof data === 'object' && !(data instanceof FormData)) {
             var query = [];
             for (var k in data) {
@@ -107,30 +126,37 @@
             xhr.send(data);
         }
     }
+
     var MirrorManager = {
         activeMirror: DEFAULT_MIRROR,
+
         getMirror: function (callback) {
             var custom = (getStorage(STORAGE_CUSTOM_KEY, '') || '').trim();
             if (custom) {
                 callback(custom.replace(/\/+$/, ''));
                 return;
             }
+
             var cached = (getStorage(STORAGE_MIRROR_KEY, '') || '').trim();
             if (cached) {
                 callback(cached.replace(/\/+$/, ''));
                 return;
             }
+
             callback(DEFAULT_MIRROR);
         },
+
         resolveFromPortal: function (callback) {
             request(ZERKALO_PORTAL, { timeout: 6000 }, function (html) {
                 var found = null;
                 var m1 = html.match(/href=["'](https?:\/\/[a-zA-Z0-9_\.-]*fanfilm[a-zA-Z0-9_\.-]*\/?[^"']*)["']/i);
                 var m2 = html.match(/<link[^>]+rel=["']preconnect["'][^>]+href=["'](https?:\/\/[^"']+)["']/i);
                 var m3 = html.match(/window\.location\.href=['"](https?:\/\/[^'"]+)['"]/i);
+
                 if (m1 && m1[1]) found = m1[1];
                 else if (m2 && m2[1]) found = m2[1];
                 else if (m3 && m3[1]) found = m3[1];
+
                 if (found) {
                     found = found.replace(/\/+$/, '');
                     MirrorManager.activeMirror = found;
@@ -146,6 +172,7 @@
                 callback(fallback);
             });
         },
+
         forceRefresh: function (callback) {
             this.activeMirror = null;
             this.resolveFromPortal(function (resolved) {
@@ -156,12 +183,14 @@
             });
         }
     };
+
     var FanFilmSource = {
         search: function (card, onResult, onError) {
             MirrorManager.getMirror(function (mirror) {
                 var title = (card.title || card.name || '').trim();
                 var origTitle = (card.original_title || card.original_name || '').trim();
                 var year = parseInt((card.release_date || card.first_air_date || '0000').substring(0, 4), 10);
+
                 function doSearch(query, onDone, onFail) {
                     var searchUrl = mirror + '/index.php?do=search&subaction=search&story=' + encodeURIComponent(query);
                     request(searchUrl, {
@@ -172,16 +201,19 @@
                         var matches = [...html.matchAll(/<a[^>]+href=["'](https?:\/\/[^"']+\/([0-9]+-[^"']+\.html))["'][^>]*>([\s\S]*?)<\/a>/gi)];
                         var items = [];
                         var seen = {};
+
                         for (var i = 0; i < matches.length; i++) {
                             var link = matches[i][1];
                             if (seen[link]) continue;
                             seen[link] = true;
+
                             var text = matches[i][3].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
                             items.push({
                                 url: link,
                                 text: text
                             });
                         }
+
                         if (items.length > 0) {
                             onDone(items);
                         } else {
@@ -191,6 +223,7 @@
                         onFail(err);
                     });
                 }
+
                 doSearch(title, function (items) {
                     FanFilmSource.pickBestMatch(items, title, origTitle, year, onResult, mirror);
                 }, function (err) {
@@ -200,6 +233,7 @@
                         onError('Сетевая ошибка: ' + err.message + hint);
                         return;
                     }
+
                     if (origTitle && origTitle.toLowerCase() !== title.toLowerCase()) {
                         doSearch(origTitle, function (items) {
                             FanFilmSource.pickBestMatch(items, title, origTitle, year, onResult, mirror);
@@ -225,6 +259,7 @@
                 });
             });
         },
+
         pickBestMatch: function (items, title, origTitle, year, onResult, mirror) {
             var best = items[0];
             if (year > 1900) {
@@ -235,8 +270,10 @@
                     }
                 }
             }
+
             FanFilmSource.loadMoviePage(best.url, mirror, onResult);
         },
+
         loadMoviePage: function (movieUrl, mirror, onResult) {
             request(movieUrl, {
                 dataType: 'text',
@@ -249,12 +286,14 @@
                     onResult({ error: 'Плеер не найден на странице фильма' });
                     return;
                 }
+
                 var iframeUrl = iframeMatch[1];
                 FanFilmSource.loadIframeData(iframeUrl, movieUrl, onResult);
             }, function (err) {
                 onResult({ error: 'Ошибка загрузки страницы фильма: ' + err.message });
             });
         },
+
         loadIframeData: function (iframeUrl, referer, onResult) {
             request(iframeUrl, {
                 dataType: 'text',
@@ -262,7 +301,7 @@
                     'Referer': referer
                 }
             }, function (html) {
-                var fileListMatch = html.match(/const fileList = JSON\.parse$'(.*?)'$;/);
+                var fileListMatch = html.match(/const fileList = JSON\.parse\('(.*?)'\);/);
                 if (!fileListMatch) {
                     onResult({
                         iframeUrl: iframeUrl,
@@ -270,6 +309,7 @@
                     });
                     return;
                 }
+
                 try {
                     var fileList = JSON.parse(fileListMatch[1]);
                     onResult({
@@ -292,6 +332,7 @@
             });
         }
     };
+
     var FanFilmUI = {
         open: function (card) {
             if (typeof Lampa !== 'undefined' && Lampa.Loading) {
@@ -299,20 +340,24 @@
                     Lampa.Loading.stop();
                 });
             }
+
             FanFilmSource.search(card, function (res) {
                 if (typeof Lampa !== 'undefined' && Lampa.Loading) {
                     Lampa.Loading.stop();
                 }
+
                 if (res.error) {
                     if (typeof Lampa !== 'undefined' && Lampa.Noty) {
                         Lampa.Noty.show('FanFilm4K: ' + res.error);
                     }
                     return;
                 }
+
                 if (res.directOnly || !res.fileList) {
                     FanFilmUI.launchPlayer(card, res.iframeUrl);
                     return;
                 }
+
                 var fileList = res.fileList;
                 if (fileList.type === 'movie') {
                     FanFilmUI.showMovieTranslations(card, fileList, res);
@@ -330,11 +375,13 @@
                 }
             });
         },
+
         showMovieTranslations: function (card, fileList, meta) {
             var all = fileList.all || {};
             var theatrical = all.theatrical || {};
             var directors = all.directors || {};
             var items = [];
+
             function collectTracks(sourceObj, prefix) {
                 for (var tKey in sourceObj) {
                     if (!Object.prototype.hasOwnProperty.call(sourceObj, tKey)) continue;
@@ -348,6 +395,7 @@
                             label += '  ★ [4K UHD]';
                         }
                         label += ' (' + (fileInfo.quality || qKey) + ')';
+
                         items.push({
                             title: label,
                             subtitle: has4k ? 'Ultra HD 4K доступно' : (fileInfo.quality || 'HD'),
@@ -357,12 +405,15 @@
                     }
                 }
             }
+
             collectTracks(theatrical, '');
             collectTracks(directors, 'Режиссерская');
+
             if (items.length === 0) {
                 FanFilmUI.launchPlayer(card, meta.iframeUrl);
                 return;
             }
+
             Lampa.Select.show({
                 title: 'FanFilm 4K: Выберите озвучку',
                 items: items,
@@ -374,15 +425,18 @@
                 }
             });
         },
+
         showSerialSeasons: function (card, fileList, meta) {
             var all = fileList.all || {};
             var seasons = Object.keys(all).sort(function (a, b) {
                 return parseInt(a, 10) - parseInt(b, 10);
             });
+
             if (seasons.length === 0) {
                 FanFilmUI.launchPlayer(card, meta.iframeUrl);
                 return;
             }
+
             var items = seasons.map(function (sNum) {
                 var epsCount = Object.keys(all[sNum] || {}).length;
                 return {
@@ -391,6 +445,7 @@
                     seasonNum: sNum
                 };
             });
+
             Lampa.Select.show({
                 title: 'FanFilm 4K: Выберите сезон',
                 items: items,
@@ -402,11 +457,13 @@
                 }
             });
         },
+
         showSerialEpisodes: function (card, fileList, meta, seasonNum) {
             var seasonEpisodes = fileList.all[seasonNum] || {};
             var episodes = Object.keys(seasonEpisodes).sort(function (a, b) {
                 return parseInt(a, 10) - parseInt(b, 10);
             });
+
             var items = episodes.map(function (epNum) {
                 var trackKeys = Object.keys(seasonEpisodes[epNum] || {});
                 var has4k = false;
@@ -416,6 +473,7 @@
                         break;
                     }
                 }
+
                 return {
                     title: 'Серия ' + epNum + (has4k ? '  ★ [4K]' : ''),
                     subtitle: 'Озвучек: ' + trackKeys.length + (has4k ? ' • 4K UHD' : ''),
@@ -423,6 +481,7 @@
                     seasonNum: seasonNum
                 };
             });
+
             Lampa.Select.show({
                 title: 'Сезон ' + seasonNum + ' — Выберите серию',
                 items: items,
@@ -434,9 +493,11 @@
                 }
             });
         },
+
         showSerialTranslations: function (card, fileList, meta, seasonNum, epNum) {
             var tracks = fileList.all[seasonNum][epNum] || {};
             var items = [];
+
             for (var k in tracks) {
                 if (!Object.prototype.hasOwnProperty.call(tracks, k)) continue;
                 var track = tracks[k];
@@ -444,12 +505,14 @@
                 var title = track.translation || 'Перевод';
                 if (has4k) title += '  ★ [4K UHD]';
                 title += ' (' + (track.quality || 'BDRip') + ')';
+
                 items.push({
                     title: title,
                     subtitle: has4k ? 'Доступно в Ultra HD 4K' : (track.quality || 'HD'),
                     fileInfo: track
                 });
             }
+
             Lampa.Select.show({
                 title: 'Сезон ' + seasonNum + ' / Серия ' + epNum + ' — Озвучка',
                 items: items,
@@ -464,6 +527,7 @@
                 }
             });
         },
+
         launchPlayer: function (card, iframeUrl, fileInfo, episodeContext) {
             var playerUrl = iframeUrl;
             if (fileInfo && fileInfo.id_translation) {
@@ -473,19 +537,26 @@
                 if (episodeContext.season) playerUrl += '&season=' + encodeURIComponent(episodeContext.season);
                 if (episodeContext.episode) playerUrl += '&episode=' + encodeURIComponent(episodeContext.episode);
             }
+
+            // Компактный оверлей на весь экран с максимальным z-index, чтобы скрыть трейлер Lampa
             var overlay = $([
                 '<div class="fanfilm4k-player-container" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:99999999 !important;">',
                 '  <div class="fanfilm4k-player-close selector" title="Закрыть" style="position:absolute;top:12px;right:16px;z-index:100000;background:rgba(229,9,20,0.85);color:#fff;width:38px;height:38px;line-height:38px;text-align:center;border-radius:50%;cursor:pointer;font-size:18px;font-weight:bold;box-shadow:0 2px 10px rgba(0,0,0,0.7);transition:transform 0.2s;">✕</div>',
                 '  <iframe src="' + playerUrl + '" referrerpolicy="unsafe-url" style="width:100%;height:100%;border:none;display:block;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" allow="autoplay; fullscreen"></iframe>',
                 '</div>'
             ].join(''));
+
             $('body').append(overlay);
+
             var closeBtn = overlay.find('.fanfilm4k-player-close');
+
             function closePlayer() {
                 overlay.remove();
                 Lampa.Controller.toggle('content');
             }
+
             closeBtn.on('hover:enter click', closePlayer);
+
             Lampa.Controller.add('fanfilm4k_player', {
                 toggle: function () {
                     Lampa.Controller.collectionSet(overlay);
@@ -498,20 +569,26 @@
                     closePlayer();
                 }
             });
+
             Lampa.Controller.toggle('fanfilm4k_player');
         }
     };
+
     function hookFullCard() {
         if (typeof Lampa === 'undefined' || !Lampa.Listener) return;
+
         function injectButton(e) {
             try {
                 var movie = e.data ? e.data.movie : (e.movie || (Lampa.Activity.active() && Lampa.Activity.active().movie));
                 if (!movie) return;
+
                 var render = (e.object && e.object.activity && typeof e.object.activity.render === 'function') 
                     ? e.object.activity.render() 
                     : (e.render || $(e.body) || $('.full-start-new, .full-start, .full'));
+
                 if (!render || !render.length) return;
-                // 1. Для правого меню источников Lampa:
+
+                // 1. Для правого меню источников Lampa (новый интерфейс):
                 var btnsContainer = render.find('.buttons--container');
                 if (btnsContainer.length && !btnsContainer.find('.view--fanfilm').length) {
                     var sourceBtn = $([
@@ -522,13 +599,17 @@
                         '  <span>FanFilm 4K</span>',
                         '</div>'
                     ].join(''));
+
                     sourceBtn.on('hover:enter click', function () {
                         FanFilmUI.open(movie);
                     });
+
                     btnsContainer.append(sourceBtn);
                 }
-                // 2. Для стандартного блока кнопок под постером
+
+                // 2. Для стандартного блока кнопок под постером (старый интерфейс или прямой вид)
                 if (render.find('.view--fanfilm').length) return;
+
                 var btn = $([
                     '<div class="full-start__button selector view--fanfilm" data-subtitle="Онлайн в 4K UHD" style="background: linear-gradient(135deg, #165b32 0%, #168e5f 100%); margin-bottom: 8px;">',
                     '  <svg style="width:1.4em;height:1.4em;vertical-align:middle;margin-right:8px;fill:#ffffff;" viewBox="0 0 24 24">',
@@ -537,13 +618,16 @@
                     '  <span>FanFilm 4K</span>',
                     '</div>'
                 ].join(''));
+
                 btn.on('hover:enter click', function () {
                     FanFilmUI.open(movie);
                 });
+
                 var torrent = render.find('.view--torrent');
                 var trailer = render.find('.view--trailer, .button--trailer');
                 var newBox = render.find('.full-start-new__buttons, .full-start-new__details');
                 var oldBox = render.find('.full-start__buttons');
+
                 if (torrent.length) {
                     torrent.after(btn);
                 } else if (trailer.length) {
@@ -564,11 +648,13 @@
                 console.error('[FanFilm4K] Error injecting button:', err);
             }
         }
+
         Lampa.Listener.follow('full', function (e) {
             if (e.type === 'complite') {
                 injectButton(e);
             }
         });
+
         setTimeout(function () {
             var active = (typeof Lampa !== 'undefined' && Lampa.Activity) ? Lampa.Activity.active() : null;
             if (active && active.component === 'full' && active.movie) {
@@ -576,61 +662,74 @@
             }
         }, 800);
     }
+
     function initSettings() {
-        if (typeof Lampa !== 'undefined' && Lampa.SettingsApi) {
-            Lampa.SettingsApi.addComponent({
-                component: 'fanfilm4k',
-                name: 'FanFilm 4K',
-                icon: '<svg height="36" viewBox="0 0 38 38" width="36" style="fill: currentColor"><path d="M21.5 2v6h3V2h-3zm-8 0v6h3V2h-3zm-8 0v6h3V2h-3zm24 0v6h3V2h-3zM3 10v26h32V10H3zm29 23H6V13h26v20z"/></svg>'
-            });
-            Lampa.SettingsApi.addParam({
-                component: 'fanfilm4k',
-                param: {
-                    name: 'fanfilm4k_refresh_mirror',
-                    type: 'static',
-                    default: ''
-                },
-                field: {
-                    name: 'Обновить зеркало',
-                    description: 'Проверить fanfilmzerkalo.fun и обновить рабочий домен'
-                },
-                onRender: function (item) {
-                    item.on('hover:enter click', function () {
-                        MirrorManager.forceRefresh();
-                    });
-                }
-            });
-            Lampa.SettingsApi.addParam({
-                component: 'fanfilm4k',
-                param: {
-                    name: STORAGE_CUSTOM_KEY,
-                    type: 'input',
-                    default: ''
-                },
-                field: {
-                    name: 'Пользовательский домен',
-                    description: 'Оставьте пустым для прямого домена ' + DEFAULT_MIRROR
-                }
-            });
-            Lampa.SettingsApi.addParam({
-                component: 'fanfilm4k',
-                param: {
-                    name: STORAGE_PROXY_URL_KEY,
-                    type: 'input',
-                    default: ''
-                },
-                field: {
-                    name: 'Пользовательский CORS-прокси',
-                    description: 'URL прокси (например, свой Cloudflare Worker). На Smart TV не требуется'
-                }
-            });
+        try {
+            if (typeof Lampa !== 'undefined' && Lampa.SettingsApi) {
+                Lampa.SettingsApi.addComponent({
+                    component: 'fanfilm4k',
+                    name: 'FanFilm 4K',
+                    icon: '<svg height="36" viewBox="0 0 38 38" width="36" style="fill: currentColor"><path d="M21.5 2v6h3V2h-3zm-8 0v6h3V2h-3zm-8 0v6h3V2h-3zm24 0v6h3V2h-3zM3 10v26h32V10H3zm29 23H6V13h26v20z"/></svg>'
+                });
+
+                Lampa.SettingsApi.addParam({
+                    component: 'fanfilm4k',
+                    param: {
+                        name: 'fanfilm4k_refresh_mirror',
+                        type: 'button'
+                    },
+                    field: {
+                        name: 'Обновить зеркало',
+                        description: 'Проверить fanfilmzerkalo.fun и обновить рабочий домен'
+                    },
+                    onRender: function (item) {
+                        item.on('hover:enter click', function () {
+                            MirrorManager.forceRefresh();
+                        });
+                    }
+                });
+
+                Lampa.SettingsApi.addParam({
+                    component: 'fanfilm4k',
+                    param: {
+                        name: STORAGE_CUSTOM_KEY,
+                        type: 'input',
+                        values: '',
+                        default: '',
+                        placeholder: DEFAULT_MIRROR
+                    },
+                    field: {
+                        name: 'Пользовательский домен',
+                        description: 'Оставьте пустым для прямого домена ' + DEFAULT_MIRROR
+                    }
+                });
+
+                Lampa.SettingsApi.addParam({
+                    component: 'fanfilm4k',
+                    param: {
+                        name: STORAGE_PROXY_URL_KEY,
+                        type: 'input',
+                        values: '',
+                        default: '',
+                        placeholder: DEFAULT_CORS_PROXY || 'https://...workers.dev/'
+                    },
+                    field: {
+                        name: 'Пользовательский CORS-прокси',
+                        description: 'URL вашего Cloudflare Worker для работы на ТВ через Media Station X'
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('[FanFilm4K] Settings registration error:', e);
         }
     }
+
     function init() {
         hookFullCard();
         initSettings();
         console.log('[FanFilm4K] Ready. Default mirror:', DEFAULT_MIRROR);
     }
+
     if (window.appready) {
         init();
     } else {
