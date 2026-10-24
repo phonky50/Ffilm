@@ -1,7 +1,7 @@
 /**
  * Plugin Name: FanFilm 4K
  * Description: Онлайн-просмотр 4K UHD фильмов и сериалов с зеркал FanFilm4K для Lampa
- * Version: 1.1.0
+ * Version: 1.1.1
  */
 
 (function () {
@@ -29,10 +29,15 @@
             'body.fanfilm4k-fullscreen-active .activity,',
             'body.fanfilm4k-fullscreen-active .full-start,',
             'body.fanfilm4k-fullscreen-active .full-start-new,',
+            'body.fanfilm4k-fullscreen-active .full-start-new__buttons,',
+            'body.fanfilm4k-fullscreen-active .full-start__buttons,',
             'body.fanfilm4k-fullscreen-active .button--trailer,',
-            'body.fanfilm4k-fullscreen-active .view--trailer {',
+            'body.fanfilm4k-fullscreen-active .view--trailer,',
+            'body.fanfilm4k-fullscreen-active .layer--modal,',
+            'body.fanfilm4k-fullscreen-active .layer--content {',
             '    display: none !important;',
             '    visibility: hidden !important;',
+            '    opacity: 0 !important;',
             '}'
         ].join('\n');
         document.head.appendChild(style);
@@ -574,11 +579,12 @@
 
         launchPlayer: function (card, iframeUrl, fileInfo, episodeContext, fileList, meta) {
             var playerUrl = iframeUrl;
-            if (playerUrl.indexOf('?') >= 0) {
-                playerUrl += '&autoplay=1';
-            } else {
-                playerUrl += '?autoplay=1';
+            if (playerUrl.indexOf('autoplay=') === -1) {
+                playerUrl += (playerUrl.indexOf('?') >= 0 ? '&' : '?') + 'autoplay=1&tv=1&device=1';
+            } else if (playerUrl.indexOf('tv=') === -1) {
+                playerUrl += '&tv=1&device=1';
             }
+
             if (fileInfo && fileInfo.id_translation) {
                 playerUrl += '&translation=' + encodeURIComponent(fileInfo.id_translation);
             }
@@ -596,7 +602,7 @@
                 '    <div class="fanfilm4k-player-title" style="color:#fff;font-size:16px;font-weight:bold;text-shadow:0 1px 4px #000;"></div>',
                 '    <div class="fanfilm4k-player-close selector" title="Назад (или кнопка Назад на пульте)" style="pointer-events:auto;background:rgba(229,9,20,0.9);color:#fff;width:40px;height:40px;line-height:40px;text-align:center;border-radius:50%;cursor:pointer;font-size:18px;font-weight:bold;box-shadow:0 2px 10px rgba(0,0,0,0.7);">✕</div>',
                 '  </div>',
-                '  <iframe src="' + playerUrl + '" referrerpolicy="unsafe-url" style="width:100%;height:100%;border:none;display:block;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" allow="autoplay; fullscreen"></iframe>',
+                '  <iframe id="fanfilm4k_iframe" tabindex="0" src="' + playerUrl + '" referrerpolicy="unsafe-url" style="width:100%;height:100%;border:none;display:block;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" allow="autoplay; fullscreen; encrypted-media"></iframe>',
                 '</div>'
             ].join(''));
 
@@ -612,8 +618,30 @@
             $('body').append(overlay);
 
             var closeBtn = overlay.find('.fanfilm4k-player-close');
+            var iframe = overlay.find('iframe');
+
+            function focusIframe() {
+                try {
+                    iframe[0].focus();
+                    if (iframe[0].contentWindow) iframe[0].contentWindow.focus();
+                } catch (e) {}
+            }
+
+            var keyHandler = function (e) {
+                var code = e.keyCode || e.which;
+                if (code === 27 || code === 8 || code === 10009 || code === 461) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closePlayer();
+                } else if (code === 13 || code === 32) {
+                    focusIframe();
+                }
+            };
+
+            window.addEventListener('keydown', keyHandler, true);
 
             function closePlayer() {
+                window.removeEventListener('keydown', keyHandler, true);
                 $('body').removeClass('fanfilm4k-fullscreen-active');
                 overlay.remove();
                 if (episodeContext && fileList && meta) {
@@ -629,15 +657,19 @@
 
             Lampa.Controller.add('fanfilm4k_player', {
                 toggle: function () {
-                    Lampa.Controller.collectionSet(overlay);
-                    Lampa.Controller.collectionFocus(closeBtn[0], overlay);
+                    focusIframe();
                 },
                 back: function () {
                     closePlayer();
+                },
+                enter: function () {
+                    focusIframe();
                 }
             });
 
             Lampa.Controller.toggle('fanfilm4k_player');
+            setTimeout(focusIframe, 300);
+            setTimeout(focusIframe, 1000);
         }
     };
 
