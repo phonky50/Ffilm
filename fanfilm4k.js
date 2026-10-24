@@ -1,7 +1,7 @@
 /**
  * Plugin Name: FanFilm 4K
  * Description: Онлайн-просмотр 4K UHD фильмов и сериалов с зеркал FanFilm4K для Lampa
- * Version: 1.0.9
+ * Version: 1.1.0
  */
 
 (function () {
@@ -19,6 +19,23 @@
             document.head.appendChild(metaRef);
         }
         metaRef.content = 'unsafe-url';
+    } catch (e) {}
+
+    try {
+        var style = document.createElement('style');
+        style.type = 'text/css';
+        style.innerHTML = [
+            'body.fanfilm4k-fullscreen-active .app__content,',
+            'body.fanfilm4k-fullscreen-active .activity,',
+            'body.fanfilm4k-fullscreen-active .full-start,',
+            'body.fanfilm4k-fullscreen-active .full-start-new,',
+            'body.fanfilm4k-fullscreen-active .button--trailer,',
+            'body.fanfilm4k-fullscreen-active .view--trailer {',
+            '    display: none !important;',
+            '    visibility: hidden !important;',
+            '}'
+        ].join('\n');
+        document.head.appendChild(style);
     } catch (e) {}
 
     // Прямое рабочее зеркало по умолчанию
@@ -302,8 +319,19 @@
                     'Referer': referer
                 }
             }, function (html) {
-                var fileListMatch = html.match(/const fileList = JSON\.parse\('(.*?)'\);/);
-                if (!fileListMatch) {
+                var needle = 'fileList = JSON.parse(\'';
+                var idx = html.indexOf(needle);
+                if (idx === -1) {
+                    onResult({
+                        iframeUrl: iframeUrl,
+                        directOnly: true
+                    });
+                    return;
+                }
+
+                var start = idx + needle.length;
+                var end = html.indexOf('\');', start);
+                if (end === -1) {
                     onResult({
                         iframeUrl: iframeUrl,
                         directOnly: true
@@ -312,13 +340,15 @@
                 }
 
                 try {
-                    var fileList = JSON.parse(fileListMatch[1]);
+                    var rawJson = html.slice(start, end);
+                    var fileList = JSON.parse(rawJson);
                     onResult({
                         fileList: fileList,
                         iframeUrl: iframeUrl,
                         referer: referer
                     });
                 } catch (e) {
+                    console.error('[FanFilm4K] JSON parse error in fileList:', e);
                     onResult({
                         iframeUrl: iframeUrl,
                         directOnly: true
@@ -355,7 +385,7 @@
                 }
 
                 if (res.directOnly || !res.fileList) {
-                    FanFilmUI.launchPlayer(card, res.iframeUrl);
+                    FanFilmUI.launchPlayer(card, res.iframeUrl, null, null, null, res);
                     return;
                 }
 
@@ -365,7 +395,7 @@
                 } else if (fileList.type === 'serial') {
                     FanFilmUI.showSerialSeasons(card, fileList, res);
                 } else {
-                    FanFilmUI.launchPlayer(card, res.iframeUrl);
+                    FanFilmUI.launchPlayer(card, res.iframeUrl, null, null, fileList, res);
                 }
             }, function (errMsg) {
                 if (typeof Lampa !== 'undefined' && Lampa.Loading) {
@@ -379,14 +409,14 @@
 
         showMovieTranslations: function (card, fileList, meta) {
             var all = fileList.all || {};
-            var theatrical = all.theatrical || {};
-            var directors = all.directors || {};
             var items = [];
 
             function collectTracks(sourceObj, prefix) {
+                if (!sourceObj || typeof sourceObj !== 'object' || Array.isArray(sourceObj)) return;
                 for (var tKey in sourceObj) {
                     if (!Object.prototype.hasOwnProperty.call(sourceObj, tKey)) continue;
                     var trackGroup = sourceObj[tKey];
+                    if (!trackGroup || typeof trackGroup !== 'object' || Array.isArray(trackGroup)) continue;
                     for (var qKey in trackGroup) {
                         if (!Object.prototype.hasOwnProperty.call(trackGroup, qKey)) continue;
                         var fileInfo = trackGroup[qKey];
@@ -407,11 +437,11 @@
                 }
             }
 
-            collectTracks(theatrical, '');
-            collectTracks(directors, 'Режиссерская');
+            collectTracks(all.theatrical, '');
+            collectTracks(all.directors, 'Режиссерская');
 
             if (items.length === 0) {
-                FanFilmUI.launchPlayer(card, meta.iframeUrl);
+                FanFilmUI.launchPlayer(card, meta.iframeUrl, null, null, fileList, meta);
                 return;
             }
 
@@ -419,7 +449,7 @@
                 title: 'FanFilm 4K: Выберите озвучку',
                 items: items,
                 onSelect: function (selected) {
-                    FanFilmUI.launchPlayer(card, meta.iframeUrl, selected.fileInfo);
+                    FanFilmUI.launchPlayer(card, meta.iframeUrl, selected.fileInfo, null, fileList, meta);
                 },
                 onBack: function () {
                     Lampa.Controller.toggle('content');
@@ -429,12 +459,19 @@
 
         showSerialSeasons: function (card, fileList, meta) {
             var all = fileList.all || {};
-            var seasons = Object.keys(all).sort(function (a, b) {
+            var seasons = Object.keys(all).filter(function (k) {
+                return !isNaN(parseInt(k, 10));
+            }).sort(function (a, b) {
                 return parseInt(a, 10) - parseInt(b, 10);
             });
 
             if (seasons.length === 0) {
-                FanFilmUI.launchPlayer(card, meta.iframeUrl);
+                FanFilmUI.launchPlayer(card, meta.iframeUrl, null, null, fileList, meta);
+                return;
+            }
+
+            if (seasons.length === 1) {
+                FanFilmUI.showSerialEpisodes(card, fileList, meta, seasons[0], true);
                 return;
             }
 
@@ -451,7 +488,7 @@
                 title: 'FanFilm 4K: Выберите сезон',
                 items: items,
                 onSelect: function (selected) {
-                    FanFilmUI.showSerialEpisodes(card, fileList, meta, selected.seasonNum);
+                    FanFilmUI.showSerialEpisodes(card, fileList, meta, selected.seasonNum, false);
                 },
                 onBack: function () {
                     Lampa.Controller.toggle('content');
@@ -459,9 +496,11 @@
             });
         },
 
-        showSerialEpisodes: function (card, fileList, meta, seasonNum) {
-            var seasonEpisodes = fileList.all[seasonNum] || {};
-            var episodes = Object.keys(seasonEpisodes).sort(function (a, b) {
+        showSerialEpisodes: function (card, fileList, meta, seasonNum, singleSeason) {
+            var seasonEpisodes = (fileList.all && fileList.all[seasonNum]) || {};
+            var episodes = Object.keys(seasonEpisodes).filter(function (k) {
+                return !isNaN(parseInt(k, 10));
+            }).sort(function (a, b) {
                 return parseInt(a, 10) - parseInt(b, 10);
             });
 
@@ -469,7 +508,7 @@
                 var trackKeys = Object.keys(seasonEpisodes[epNum] || {});
                 var has4k = false;
                 for (var i = 0; i < trackKeys.length; i++) {
-                    if (seasonEpisodes[epNum][trackKeys[i]].uhd === 1) {
+                    if (seasonEpisodes[epNum][trackKeys[i]] && seasonEpisodes[epNum][trackKeys[i]].uhd === 1) {
                         has4k = true;
                         break;
                     }
@@ -487,16 +526,20 @@
                 title: 'Сезон ' + seasonNum + ' — Выберите серию',
                 items: items,
                 onSelect: function (selected) {
-                    FanFilmUI.showSerialTranslations(card, fileList, meta, selected.seasonNum, selected.epNum);
+                    FanFilmUI.showSerialTranslations(card, fileList, meta, selected.seasonNum, selected.epNum, singleSeason);
                 },
                 onBack: function () {
-                    FanFilmUI.showSerialSeasons(card, fileList, meta);
+                    if (singleSeason) {
+                        Lampa.Controller.toggle('content');
+                    } else {
+                        FanFilmUI.showSerialSeasons(card, fileList, meta);
+                    }
                 }
             });
         },
 
-        showSerialTranslations: function (card, fileList, meta, seasonNum, epNum) {
-            var tracks = fileList.all[seasonNum][epNum] || {};
+        showSerialTranslations: function (card, fileList, meta, seasonNum, epNum, singleSeason) {
+            var tracks = (fileList.all && fileList.all[seasonNum] && fileList.all[seasonNum][epNum]) || {};
             var items = [];
 
             for (var k in tracks) {
@@ -521,39 +564,65 @@
                     FanFilmUI.launchPlayer(card, meta.iframeUrl, selected.fileInfo, {
                         season: seasonNum,
                         episode: epNum
-                    });
+                    }, fileList, meta);
                 },
                 onBack: function () {
-                    FanFilmUI.showSerialEpisodes(card, fileList, meta, seasonNum);
+                    FanFilmUI.showSerialEpisodes(card, fileList, meta, seasonNum, singleSeason);
                 }
             });
         },
 
-        launchPlayer: function (card, iframeUrl, fileInfo, episodeContext) {
+        launchPlayer: function (card, iframeUrl, fileInfo, episodeContext, fileList, meta) {
             var playerUrl = iframeUrl;
+            if (playerUrl.indexOf('?') >= 0) {
+                playerUrl += '&autoplay=1';
+            } else {
+                playerUrl += '?autoplay=1';
+            }
             if (fileInfo && fileInfo.id_translation) {
-                playerUrl += (playerUrl.indexOf('?') >= 0 ? '&' : '?') + 'translation=' + encodeURIComponent(fileInfo.id_translation);
+                playerUrl += '&translation=' + encodeURIComponent(fileInfo.id_translation);
             }
             if (episodeContext) {
                 if (episodeContext.season) playerUrl += '&season=' + encodeURIComponent(episodeContext.season);
                 if (episodeContext.episode) playerUrl += '&episode=' + encodeURIComponent(episodeContext.episode);
             }
 
-            // Компактный оверлей на весь экран с максимальным z-index, чтобы скрыть трейлер Lampa
+            // Прячем абсолютно все элементы Лампы на фоне
+            $('body').addClass('fanfilm4k-fullscreen-active');
+
             var overlay = $([
-                '<div class="fanfilm4k-player-container" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:99999999 !important;">',
-                '  <div class="fanfilm4k-player-close selector" title="Закрыть" style="position:absolute;top:12px;right:16px;z-index:100000;background:rgba(229,9,20,0.85);color:#fff;width:38px;height:38px;line-height:38px;text-align:center;border-radius:50%;cursor:pointer;font-size:18px;font-weight:bold;box-shadow:0 2px 10px rgba(0,0,0,0.7);transition:transform 0.2s;">✕</div>',
+                '<div class="fanfilm4k-player-container" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:#000;z-index:2147483647 !important;">',
+                '  <div class="fanfilm4k-player-bar" style="position:absolute;top:0;left:0;width:100%;padding:12px 24px;z-index:2147483648;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);pointer-events:none;">',
+                '    <div class="fanfilm4k-player-title" style="color:#fff;font-size:16px;font-weight:bold;text-shadow:0 1px 4px #000;"></div>',
+                '    <div class="fanfilm4k-player-close selector" title="Назад (или кнопка Назад на пульте)" style="pointer-events:auto;background:rgba(229,9,20,0.9);color:#fff;width:40px;height:40px;line-height:40px;text-align:center;border-radius:50%;cursor:pointer;font-size:18px;font-weight:bold;box-shadow:0 2px 10px rgba(0,0,0,0.7);">✕</div>',
+                '  </div>',
                 '  <iframe src="' + playerUrl + '" referrerpolicy="unsafe-url" style="width:100%;height:100%;border:none;display:block;" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" allow="autoplay; fullscreen"></iframe>',
                 '</div>'
             ].join(''));
+
+            var titleText = (card.title || card.name || 'FanFilm 4K');
+            if (episodeContext && episodeContext.season) {
+                titleText += ' — ' + episodeContext.season + ' сезон, ' + episodeContext.episode + ' серия';
+            }
+            if (fileInfo && fileInfo.translation) {
+                titleText += ' (' + fileInfo.translation + ')';
+            }
+            overlay.find('.fanfilm4k-player-title').text(titleText);
 
             $('body').append(overlay);
 
             var closeBtn = overlay.find('.fanfilm4k-player-close');
 
             function closePlayer() {
+                $('body').removeClass('fanfilm4k-fullscreen-active');
                 overlay.remove();
-                Lampa.Controller.toggle('content');
+                if (episodeContext && fileList && meta) {
+                    FanFilmUI.showSerialEpisodes(card, fileList, meta, episodeContext.season, false);
+                } else if (fileList && meta) {
+                    FanFilmUI.showMovieTranslations(card, fileList, meta);
+                } else {
+                    Lampa.Controller.toggle('content');
+                }
             }
 
             closeBtn.on('hover:enter click', closePlayer);
@@ -564,9 +633,6 @@
                     Lampa.Controller.collectionFocus(closeBtn[0], overlay);
                 },
                 back: function () {
-                    closePlayer();
-                },
-                enter: function () {
                     closePlayer();
                 }
             });
