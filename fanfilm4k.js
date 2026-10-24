@@ -1,7 +1,7 @@
 /**
  * Plugin Name: FanFilm 4K
  * Description: Онлайн-просмотр 4K UHD фильмов и сериалов с зеркал FanFilm4K для Lampa
- * Version: 1.0.8
+ * Version: 1.0.9
  */
 
 (function () {
@@ -198,16 +198,17 @@
                         dataType: 'text',
                         timeout: 10000
                     }, function (html) {
-                        var matches = [...html.matchAll(/<a[^>]+href=["'](https?:\/\/[^"']+\/([0-9]+-[^"']+\.html))["'][^>]*>([\s\S]*?)<\/a>/gi)];
+                        var regex = /<a[^>]+href=["'](https?:\/\/[^"']+\/([0-9]+-[^"']+\.html))["'][^>]*>([\s\S]*?)<\/a>/gi;
+                        var m;
                         var items = [];
                         var seen = {};
 
-                        for (var i = 0; i < matches.length; i++) {
-                            var link = matches[i][1];
+                        while ((m = regex.exec(html)) !== null) {
+                            var link = m[1];
                             if (seen[link]) continue;
                             seen[link] = true;
 
-                            var text = matches[i][3].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                            var text = m[3].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
                             items.push({
                                 url: link,
                                 text: text
